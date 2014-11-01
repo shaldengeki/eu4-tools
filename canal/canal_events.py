@@ -5,18 +5,22 @@ import decimal
 import numpy
 import random
 
+class Province(object):
+  def __init__(self, name, climates, religion):
+    self.name = name
+
+    # list of climates in a region, e.g. ['tropical']
+    self.climates = climates
+
+    # name of religion group, e.g. 'christian' or 'muslim'
+    self.religion = religion
+
 class Run(object):
-  def __init__(self, rule, province=None, climate=None, religion=None, start_date=None, curr_date=None, money=0, unrest=0, rebels=0, manpower=0, adm=0, dip=0, mil=0, check_event_every_days=20):
+  def __init__(self, rule, province, start_date=None, curr_date=None, money=0, unrest=0, rebels=0, manpower=100, adm=0, dip=0, mil=0, check_event_every_days=20):
     # function that takes a set of choices and outputs the choice to make.
     self.rule = rule
 
-    # name of province that canal is being built in, e.g. 'panama'
-    self.province = str(province)
-
-    # list of climates in the province, e.g. ['arid']
-    if climate is None:
-      climate = []
-    self.climate = climate
+    self.province = province
 
     # default to eu4 start date.
     if start_date is None:
@@ -25,6 +29,7 @@ class Run(object):
 
     # canals take 10 years to build.
     self.finish_date = datetime.date(year=self.start_date.year + 10, month=self.start_date.month, day=self.start_date.day)
+    self.game_end = datetime.date(year=1821, month=1, day=1)
 
     if curr_date is None:
       curr_date = self.start_date
@@ -39,10 +44,6 @@ class Run(object):
     self.rebels = int(rebels)
     self.manpower = int(manpower)
 
-    # religion group in province, e.g. 'christian' or 'muslim'
-    if religion is None:
-      religion = 'christian'
-    self.religion = religion
     self.adm = int(adm)
     self.dip = int(dip)
     self.mil = int(mil)
@@ -59,18 +60,26 @@ class Run(object):
           event.fire(self)
       # jump ahead to the next event check.
       self.days_left -= self.check_event_every_days
-      try:
-        if self.days_left < 0:
-          # we've reached the end. rewind to the exact end date.
-          orig_days_left = int(self.days_left + self.check_event_every_days)
-          self.days += orig_days_left
-          self.curr_date += datetime.timedelta(days=orig_days_left)
-          self.days_left = 0
-        else:
-          self.days += self.check_event_every_days
-          self.curr_date += datetime.timedelta(days=self.check_event_every_days)
-      except OverflowError:
+      if self.days_left < 0:
+        # we've reached the end. rewind to the exact end date.
+        orig_days_left = int(self.days_left + self.check_event_every_days)
+        self.days += orig_days_left
+        self.curr_date += datetime.timedelta(days=orig_days_left)
+        self.days_left = 0
+      else:
+        self.days += self.check_event_every_days
+        self.curr_date += datetime.timedelta(days=self.check_event_every_days)
+      if self.curr_date >= self.game_end:
         print "Indefinite run, halting."
+        self.days = float('inf')
+        self.days_left = float('inf')
+        self.money = float('inf')
+        self.unrest = float('inf')
+        self.rebels = float('inf')
+        self.manpower = float('inf')
+        self.adm = float('inf')
+        self.dip = float('inf')
+        self.mil = float('inf')
         break
 
 class Choice(object):
@@ -167,14 +176,14 @@ class UnrestProgressBadEvent(CanalEvent):
   choices = [Choice(unrest=10), Choice(progress='-0.05')]
 
 class AridTropicalLongerEvent(CanalEvent):
-  mtth = staticmethod(lambda r: 84 * (1.5 if 'tropical' in r.climate else 1) * (1.25 if 'arid' in r.climate else 1))
+  mtth = staticmethod(lambda r: 84 * (1.5 if 'tropical' in r.province.climates else 1) * (1.25 if 'arid' in r.province.climates else 1))
 
 # Actual events
 class AlcoholRations(CanalEvent):
   mtth = 84
   choices = [Choice(progress='0.025', income='-0.5'), Choice(progress='-0.05')]
   def can_fire(self, run):
-    return run.religion != 'muslim' and super(AlcoholRations, self).can_fire(run)
+    return run.province.religion != 'muslim' and super(AlcoholRations, self).can_fire(run)
 
 class PoorPlanning(AdmProgressBadEvent):
   pass
@@ -220,34 +229,38 @@ class CanalCompanyFormed(CanalEvent):
     return not self.__class__.has_fired and super(CanalCompanyFormed, self).can_fire(run)
 
 class OutbreakOfIllness(CanalEvent):
-  mtth = staticmethod(lambda r: 84 * (0.75 if 'tropical' in r.climate else 1))
+  mtth = staticmethod(lambda r: 84 * (0.75 if 'tropical' in r.province.climates else 1))
   choices = [Choice(manpower=-10000), Choice(progress='-0.05')]
   def can_fire(self, run):
-    return run.manpower >= 12000 and ('tropical' in run.climate or 'arid' in r.climate) and super(OutbreakOfIllness, self).can_fire(run)
+    return run.manpower >= 12000 and ('tropical' in run.province.climates or 'arid' in run.province.climates) and super(OutbreakOfIllness, self).can_fire(run)
 
 class OutbreakOfIllness2(CanalEvent):
-  mtth = staticmethod(lambda r: 84 * (0.75 if 'tropical' in r.climate else 1))
+  mtth = staticmethod(lambda r: 84 * (0.75 if 'tropical' in r.province.climates else 1))
   choices = [Choice(manpower=-10000), Choice(progress='-0.05')]
   def can_fire(self, run):
-    return run.manpower >= 12000 and ('tropical' in run.climate or 'arid' in r.climate) and super(OutbreakOfIllness2, self).can_fire(run)
+    return run.manpower >= 12000 and ('tropical' in run.province.climates or 'arid' in run.province.climates) and super(OutbreakOfIllness2, self).can_fire(run)
 
 class ViolentThunderstorms(DipProgressBadEvent):
   def can_fire(self, run):
-    return 'tropical' in run.climate and super(ViolentThunderstorms, self).can_fire(run)
+    return 'tropical' in run.province.climates and super(ViolentThunderstorms, self).can_fire(run)
 
 class CanalCrossingRiver(CanalEvent):
   mtth = 84
   choices = [Choice(adm=-100), Choice(manpower=-10000)]
   def can_fire(self, run):
-    return run.province == 'panama' and run.manpower >= 12000 and super(CanalCrossingRiver, self).can_fire(run)
+    return run.province.name == 'panama' and run.manpower >= 12000 and super(CanalCrossingRiver, self).can_fire(run)
 
 class LackOfFreshWater(DipProgressBadEvent):
   mtth = 84
   def can_fire(self, run):
-    return ('tropical' in run.climate or 'arid' in run.climate) and super(LackOfFreshWater, self).can_fire(run)
+    return ('tropical' in run.province.climates or 'arid' in run.province.climates) and super(LackOfFreshWater, self).can_fire(run)
 
 # list of events, for easy reference.
 events = [AlcoholRations(),PoorPlanning(),WeakLeadership(),NewLeadership(),DisatrousLandslide(),DwindlingLocalTrade(),LackOfProvision(),SevereFloods(),IncreasedDrunkenness(),CanalCompanyScheme(),GoodLeadership(),GoodWeather(),CanalCompanyFormed(),OutbreakOfIllness(),OutbreakOfIllness2(),ViolentThunderstorms(),CanalCrossingRiver(),LackOfFreshWater()]
+
+panama = Province('panama', [], 'christian')
+holstein = Province('holstein', [], 'christian')
+dumyat = Province('dumyat', [], 'christian')
 
 # some basic rules.
 def maximize_monarch_points(choices):
@@ -263,11 +276,11 @@ def reset_events(events):
   for e in events:
     e.__class__.has_fired = False
 
-def perform_runs(rule, n=1000):
+def perform_runs(rule, province, n=1000, start_date=datetime.date(year=1745, month=1, day=1)):
   progress_step = n/10
   runs = []
   for i in xrange(n):
-    run = Run(rule)
+    run = Run(rule, province, start_date=start_date)
     run.run(events)
     runs.append(run)
     reset_events(events)
